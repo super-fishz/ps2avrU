@@ -27,10 +27,9 @@
 #include "options.h"
 #include "optionsled.h"
 #include "keydownbuffer.h"
+#include "hardwareinfo.h".h"
 
 static lock_led_t lockLedStatus;
-
-#include "ledrender_inc.c"
 
 #define FULL_LED_MODE_NUM 	5
 #define FULL_LED_MODE2_NUM 	5
@@ -64,6 +63,7 @@ static uint8_t downLevel = 0;
 static const uint8_t downLevelMax = 12;
 static uint8_t downLevelLife = 0;
 
+static uint8_t prevLEDstate = 0;
 static uint8_t ledInited = 0;
 
 static uint8_t _fullLEDMode = 0;	// 
@@ -146,7 +146,6 @@ static uint8_t _delayCount = 0;
 static uint8_t _stepCount = 0;
 
 static uint8_t _rainbowIndex = 0;
-// static uint8_t arrived;
 
 static void setLed2All(cRGB_t xRgb);
 static void _setLed2All(cRGB_t *xRgb);
@@ -162,14 +161,211 @@ static void setModLength(uint8_t *aIndex);
 static void applyStaticFullLed(void);
 static void fadeRgbRainbowStatic(void);
 
+static uint8_t LEDstate = 0;     ///< current state of the LEDs
+
+#define blinkLedCountDelay 900
+
+static uint8_t ledBlinkCount = 0;
+static uint8_t targetLeds;
+static uint8_t targetStatus;
+/*
+ * xPrev : LED의 이전 상태를 저장하고 있다. 이정 상태와 다를 경우에만 깜박이도록.
+ */
+void getLedBlink(uint8_t xLedPin, bool xMainLedOnOffStatus, bool xSubOnOffStatus, bool xSubPrevOnOffStatus, uint8_t *xCount){
+
+    bool isChanged = false;
+
+    if (xSubOnOffStatus && !xSubPrevOnOffStatus) { // light up
+
+        *xCount =  4;   // off on off 1
+        isChanged = true;
+
+    } else if(!xSubOnOffStatus && xSubPrevOnOffStatus){
+
+        *xCount =  2;   // off 1
+        isChanged = true;
+
+    }
+
+    if(isChanged)
+    {
+        if(xMainLedOnOffStatus) targetStatus |= xLedPin;
+        targetLeds |= xLedPin;
+    }
+}
+
+void blinkIndicateLED(void) {
+    static int counter = 0;
+    const int countMAX = 100;
+    //on off on off
+    if(ledBlinkCount > 0){
+        counter++;
+        if(counter > countMAX){
+            if(ledBlinkCount == 1 || ledBlinkCount == 3){
+                if(targetLeds & LEDNUM) {
+                    if(targetStatus & LEDNUM)
+                    {
+                        turnOnLED(LEDNUM);
+                    }else{
+                        turnOffLED(LEDNUM);
+                    }
+                }
+                if(targetLeds & LEDCAPS) {
+                    if(targetStatus & LEDCAPS)
+                    {
+                        turnOnLED(LEDCAPS);
+                    }else{
+                        turnOffLED(LEDCAPS);
+                    }
+                }
+                if(targetLeds & LEDSCROLL) {
+                    if(targetStatus & LEDSCROLL)
+                    {
+                        turnOnLED(LEDSCROLL);
+                    }else{
+                        turnOffLED(LEDSCROLL);
+                    }
+                }
+            }else if(ledBlinkCount == 4 || ledBlinkCount == 2){
+                if(targetLeds & LEDNUM) {
+                    if(targetStatus & LEDNUM)
+                    {
+                        turnOffLED(LEDNUM);
+                    }else{
+                        turnOnLED(LEDNUM);
+                    }
+                }
+                if(targetLeds & LEDCAPS) {
+                    if(targetStatus & LEDCAPS)
+                    {
+                        turnOffLED(LEDCAPS);
+                    }else{
+                        turnOnLED(LEDCAPS);
+                    }
+                }
+                if(targetLeds & LEDSCROLL) {
+                    if(targetStatus & LEDSCROLL)
+                    {
+                        turnOffLED(LEDSCROLL);
+                    }else{
+                        turnOnLED(LEDSCROLL);
+                    }
+                }
+            }
+            counter = 0;
+
+            ledBlinkCount--;
+        }
+    }else{
+        targetStatus = 0;
+        targetLeds = 0;
+        counter = 0;
+    }
+}
+
+
+void blinkBootMapperLED(void) {
+#ifdef ENABLE_BOOTMAPPER
+    static int gDelayCounter = 0;
+    static uint8_t gLEDState = 1;
+
+    if(isBootMapper()){
+        ++gDelayCounter;
+        if(gDelayCounter > blinkLedCountDelay){
+            if(gLEDState == 1){
+                turnOffLED(LEDCAPS);
+            }else{
+                turnOnLED(LEDCAPS);
+            }
+            gDelayCounter = 0;
+            gLEDState ^= 1;
+        }
+    }else{
+        gLEDState = 1;
+    }
+#endif
+}
+
+#define IS_LIGHT_UP_NL  lockLedStatus.nl == LOCK_LED_ALWAYS_ON \
+                        || (lockLedStatus.nl == LOCK_LED_DEFAULT && (LEDstate & LED_STATE_NUM)) \
+                        || (lockLedStatus.nl == LOCK_LED_REVERSE && !(LEDstate & LED_STATE_NUM)) \
+                        || (lockLedStatus.nl == LOCK_LED_FN2_TOGGLE && getBeyondFN() == LAYER_FN2)\
+                        || (lockLedStatus.nl == LOCK_LED_FN3_TOGGLE && getBeyondFN() == LAYER_FN3)
+#define IS_LIGHT_UP_CL  lockLedStatus.cl == LOCK_LED_ALWAYS_ON \
+                        || (lockLedStatus.cl == LOCK_LED_DEFAULT && (LEDstate & LED_STATE_CAPS)) \
+                        || (lockLedStatus.cl == LOCK_LED_REVERSE && !(LEDstate & LED_STATE_CAPS)) \
+                        || (lockLedStatus.cl == LOCK_LED_FN2_TOGGLE && getBeyondFN() == LAYER_FN2)\
+                        || (lockLedStatus.cl == LOCK_LED_FN3_TOGGLE && getBeyondFN() == LAYER_FN3)
+#define IS_LIGHT_UP_SL  lockLedStatus.sl == LOCK_LED_ALWAYS_ON \
+                        || (lockLedStatus.sl == LOCK_LED_DEFAULT && (LEDstate & LED_STATE_SCROLL)) \
+                        || (lockLedStatus.sl == LOCK_LED_REVERSE && !(LEDstate & LED_STATE_SCROLL)) \
+                        || (lockLedStatus.sl == LOCK_LED_FN2_TOGGLE && getBeyondFN() == LAYER_FN2)\
+                        || (lockLedStatus.sl == LOCK_LED_FN3_TOGGLE && getBeyondFN() == LAYER_FN3)
+
+void blinkOnce(const int xStayMs){
+
+    if ( IS_LIGHT_UP_NL ) { // light up num lock
+        turnOffLED(LEDNUM);//PORTLEDS &= ~(1 << LEDNUM);    //
+    }else{
+        turnOnLED(LEDNUM);//PORTLEDS &= ~(1 << LEDNUM); //
+    }
+
+    if ( IS_LIGHT_UP_CL ) { // light up caps lock
+        turnOffLED(LEDCAPS); //PORTLEDS &= ~(1 << LEDCAPS); //
+    } else {
+        turnOnLED(LEDCAPS); //PORTLEDS |= (1 << LEDCAPS);   //
+    }
+    /*
+        _delay_ms()에 xStayMs를 인자로 넣으면 hex 파일의 용량이 0x1000가량 증가한다.
+        매뉴얼 펑션으로 _delay_ms(1)을 ms 만큼 루프시키도록 만들어서 사용;
+    */
+    __delay_ms(xStayMs);
+
+    if ( IS_LIGHT_UP_NL ) { // light up num lock
+        turnOnLED(LEDNUM);//PORTLEDS &= ~(1 << LEDNUM); //
+    }else{
+        turnOffLED(LEDNUM);//PORTLEDS &= ~(1 << LEDNUM);    //
+    }
+
+    if ( IS_LIGHT_UP_CL ) { // light up caps lock
+        turnOnLED(LEDCAPS); //PORTLEDS |= (1 << LEDCAPS);   //
+    } else {
+        turnOffLED(LEDCAPS); //PORTLEDS &= ~(1 << LEDCAPS); //
+    }
+}
+
+void setLed(uint8_t xLed, bool xBool) {
+    if (xBool) {
+        if (xLed == LED_STATE_NUM) {
+            turnOnLED(LEDNUM);
+        } else if (xLed == LED_STATE_CAPS) {
+            turnOnLED(LEDCAPS);
+        }
+        else if(xLed == LED_STATE_SCROLL) {
+            turnOnLED(LEDSCROLL);
+        }
+    } else {
+        if (xLed == LED_STATE_NUM) {
+            turnOffLED(LEDNUM);
+        } else if (xLed == LED_STATE_CAPS) {
+            turnOffLED(LEDCAPS);
+        }
+        else if(xLed == LED_STATE_SCROLL) {
+            turnOffLED(LEDSCROLL);
+        }
+    }
+}
+
 void initLED(void){
 	// led pin
 	DDRD |= (LEDNUM | LEDCAPS | LEDFULLLED | LEDSCROLL);	// output;
 	PORTD &= ~(LEDNUM | LEDCAPS | LEDFULLLED | LEDSCROLL);	// low
 
 	// initialize i2c function library
+#if FIRMWARE == FIRMWARE_GB
     i2cInit();
     i2cSetBitrate(400);
+#endif
 
 }
 
@@ -349,6 +545,7 @@ void setLedOptions(uint8_t *data){
      else if(*(data+1) == OPTION_INDEX_LOCK_LED_NL)
      {
          lockLedStatus.nl = *(data+2);
+//         prevLEDstate ^= LED_STATE_NUM;
          setLEDIndicate();
 
          _saved2 |= BV(SAVE2_BIT_LOCK_LED_STATUS);
@@ -356,6 +553,7 @@ void setLedOptions(uint8_t *data){
      else if(*(data+1) == OPTION_INDEX_LOCK_LED_CL)
      {
          lockLedStatus.cl = *(data+2);
+//         prevLEDstate ^= LED_STATE_CAPS;
          setLEDIndicate();
 
          _saved2 |= BV(SAVE2_BIT_LOCK_LED_STATUS);
@@ -363,6 +561,7 @@ void setLedOptions(uint8_t *data){
      else if(*(data+1) == OPTION_INDEX_LOCK_LED_SL)
      {
          lockLedStatus.sl = *(data+2);
+//         prevLEDstate ^= LED_STATE_SCROLL;
          setLEDIndicate();
 
          _saved2 |= BV(SAVE2_BIT_LOCK_LED_STATUS);
@@ -612,35 +811,86 @@ void setLEDState(uint8_t xState){
 uint8_t getLEDState(void){
 	return LEDstate;
 }
+
+static uint8_t updateLed(uint8_t xLockStatus, uint8_t xLedPin, uint8_t xLedState)
+{
+    uint8_t gCount = 0;
+
+    if(xLockStatus == LOCK_LED_ALWAYS_ON)
+    {
+        turnOnLED(xLedPin);
+        getLedBlink(xLedPin, true, (LEDstate & xLedState), (prevLEDstate & xLedState), &gCount);
+        if(gCount == 0) getLedBlink(xLedPin, true, getBeyondFN(), getBeyondFNPrev(), &gCount);
+    }
+    else if(xLockStatus == LOCK_LED_ALWAYS_OFF)
+    {
+        turnOffLED(xLedPin);
+        getLedBlink(xLedPin, false, (LEDstate & xLedState), (prevLEDstate & xLedState), &gCount);
+        if(gCount == 0) getLedBlink(xLedPin, false, getBeyondFN(), getBeyondFNPrev(), &gCount);
+    }
+    else if(xLockStatus == LOCK_LED_DEFAULT)
+    {
+        if (LEDstate & xLedState) {
+            turnOnLED(xLedPin);
+        } else {
+            turnOffLED(xLedPin);
+        }
+        getLedBlink(xLedPin, (LEDstate & xLedState), getBeyondFN(), getBeyondFNPrev(), &gCount);
+    }
+    else if(xLockStatus == LOCK_LED_REVERSE)
+    {
+        if (LEDstate & xLedState) {
+            turnOffLED(xLedPin);
+        } else {
+            turnOnLED(xLedPin);
+        }
+        getLedBlink(xLedPin, !(LEDstate & xLedState), getBeyondFN(), getBeyondFNPrev(), &gCount);
+    }
+    else if(xLockStatus == LOCK_LED_FN2_TOGGLE)
+    {
+        if (getBeyondFN() == LAYER_FN2) {
+            turnOnLED(xLedPin);
+        } else {
+            turnOffLED(xLedPin);
+        }
+        getLedBlink(xLedPin, (getBeyondFN() == LAYER_FN2), (LEDstate & xLedState), (prevLEDstate & xLedState), &gCount);
+    }
+    else if(xLockStatus == LOCK_LED_FN3_TOGGLE)
+    {
+        if (getBeyondFN() == LAYER_FN3) {
+            turnOnLED(xLedPin);
+        } else {
+            turnOffLED(xLedPin);
+        }
+        getLedBlink(xLedPin, (getBeyondFN() == LAYER_FN3), (LEDstate & xLedState), (prevLEDstate & xLedState), &gCount);
+    }
+    else if(xLockStatus == LOCK_LED_FN23_TOGGLE)
+    {
+        if (getBeyondFN()) {
+            turnOnLED(xLedPin);
+        } else {
+            turnOffLED(xLedPin);
+        }
+        getLedBlink(xLedPin, getBeyondFN(), (LEDstate & xLedState), (prevLEDstate & xLedState), &gCount);
+    }
+
+    return gCount;
+}
+// TODO
+/**
+ * 어떤 변화라도 on/off 깜박이는 것은 동일 하므로, NCS별로 변화가 있었음을 표시해주면 해당 LED를 깜박이는 걸로;
+ */
 void setLEDIndicate(void) {
-	static uint8_t prevLEDstate;
 
-	// nl led를 fn2 toggle 로 사용할 경우는 깜박이도록;
-	if(getBeyondFnLed() == BEYOND_FN_LED_NL){
-		getLedBlink(LED_STATE_NUM, getBeyondFN(), &prevLEDstate, &ledBlinkCount);
-	}
-	else if (   IS_LIGHT_UP_NL    ) { // light up num lock
-        turnOnLED(LEDNUM);//PORTLEDS |= (1 << LEDNUM);	//
-    } else {
-        turnOffLED(LEDNUM);//PORTLEDS &= ~(1 << LEDNUM);	//
-    }
-	
+    // nl led를 다른 용도로 사용 할 경우 깜박임으로 indicating
 
-    if (  IS_LIGHT_UP_CL  ) { // light up caps lock
-        turnOnLED(LEDCAPS); //PORTLEDS |= (1 << LEDCAPS);	//
-    } else {
-        turnOffLED(LEDCAPS); //PORTLEDS &= ~(1 << LEDCAPS);	//
-    }
-
-    // sl led를 fn2 toggle 로 사용할 경우는 깜박이도록;
-    if(getBeyondFnLed() == BEYOND_FN_LED_SL){
-		getLedBlink(LED_STATE_SCROLL, getBeyondFN(), &prevLEDstate, &ledBlinkCount);
-	}
-	else if ( IS_LIGHT_UP_SL ) { // light up scroll lock
-		turnOnLED(LEDSCROLL); //PORTLEDS |= (1 << LEDCAPS);	//
-	} else {
-		turnOffLED(LEDSCROLL); //PORTLEDS &= ~(1 << LEDCAPS);	//
-	}
+    uint8_t gCount = 0;
+    gCount = updateLed(lockLedStatus.nl, LEDNUM, LED_STATE_NUM);
+    if(gCount > 0) ledBlinkCount = gCount;
+    gCount = updateLed(lockLedStatus.cl, LEDCAPS, LED_STATE_CAPS);
+    if(gCount > 0) ledBlinkCount = gCount;
+    gCount = updateLed(lockLedStatus.sl, LEDSCROLL, LED_STATE_SCROLL);
+    if(gCount > 0) ledBlinkCount = gCount;
 
 	prevLEDstate = LEDstate;
 
@@ -715,6 +965,7 @@ static void writeLEDMode(void) {
 
 		_saved = 0;
 		_saved2 = 0;
+
 		blinkOnce(50);
 	}
 }
@@ -908,6 +1159,7 @@ static void setLed2State(void){
 
 static void sendI2c(void){
 
+#if FIRMWARE == FIRMWARE_GB
     i2cLength = numOfLeds * 3;
 #ifdef SPLIT
     /**
@@ -922,6 +1174,8 @@ static void sendI2c(void){
 	
 #endif
     i2cLength = 0;
+#endif
+
 }
 
 static void _setLed2All(cRGB_t *xRgb){

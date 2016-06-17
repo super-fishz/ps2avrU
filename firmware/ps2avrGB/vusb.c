@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "eeprominfo.h"
 #include "bootmapper.h"
 #include "timerinclude.h"
+#include "hardwareinfo.h"
 
 /* ------------------------------------------------------------------------- */
 /* ----------------------------- USB interface ----------------------------- */
@@ -339,22 +340,53 @@ usbMsgLen_t usbFunctionSetup(uint8_t data[8]) {
             	    getOptions(&optionsBuffer);
             		usbMsgPtr = (usbMsgPtr_t)&optionsBuffer;
             		return sizeof(optionsBuffer); //OPTION_GET_REPORT_LENGTH_INFO;
-            	}else if(rq->wLength.word >= OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER1 && rq->wLength.word <= OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER4){
-            		// keymap
-            	    usbMsgFlags = USB_FLG_MSGPTR_IS_ROM;
-					usbMsgPtr = (usbMsgPtr_t)(KEYMAP_ADDRESS + (ROWS * COLUMNS * (rq->wLength.word - OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER1)));
-					return OPTION_GET_REPORT_LENGTH_KEYMAP;
-            	}else if(rq->wLength.word >= OPTION_GET_REPORT_LENGTH_MACRO1 && rq->wLength.word <= OPTION_GET_REPORT_LENGTH_MACRO12){
-            		// cst macro
+            	}else if(rq->wLength.word == OPTION_GET_REPORT_LENGTH_TOGGLE_BOOTMAPPER){
+            	    static bool gIsBootloader;
+            	    if(isBootMapper()){
+                        setToBootMapper(false);
+                        gIsBootloader = false;
+                    }else{
+                        setToBootMapper(true);
+                        gIsBootloader = true;
+                    }
+            	    usbMsgPtr = (usbMsgPtr_t)&gIsBootloader;
+            	    return 1;
+#if (FIRMWARE > FIRMWARE_GB)
+                }else if(rq->wLength.word >= OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER1 && rq->wLength.word <= OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER4){
+                    // keymap
+                    usbMsgFlags = USB_FLG_MSGPTR_IS_ROM;
+                    usbMsgPtr = (usbMsgPtr_t)(0);
+                    return 0;
+                }else if(rq->wLength.word >= OPTION_GET_REPORT_LENGTH_MACRO1 && rq->wLength.word <= OPTION_GET_REPORT_LENGTH_MACRO12){
+                    // cst macro
+                    usbMsgFlags = USB_FLG_MSGPTR_IS_ROM;
+                    usbMsgPtr = (usbMsgPtr_t)(0);
+                    return 0;
+
+                }else if(rq->wLength.word == OPTION_GET_OPTION_INDEX_DUALACTION){
+                    // cst macro
+                    usbMsgFlags = USB_FLG_MSGPTR_IS_ROM;
+                    usbMsgPtr = (usbMsgPtr_t)(0);
+                    return 0;
+#else
+                }else if(rq->wLength.word >= OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER1 && rq->wLength.word <= OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER4){
+                    // keymap
+                    usbMsgFlags = USB_FLG_MSGPTR_IS_ROM;
+                    usbMsgPtr = (usbMsgPtr_t)(KEYMAP_ADDRESS + (ROWS * COLUMNS * (rq->wLength.word - OPTION_GET_REPORT_LENGTH_KEYMAP_LAYER1)));
+                    return OPTION_GET_REPORT_LENGTH_KEYMAP;
+                }else if(rq->wLength.word >= OPTION_GET_REPORT_LENGTH_MACRO1 && rq->wLength.word <= OPTION_GET_REPORT_LENGTH_MACRO12){
+                    // cst macro
                     usbMsgFlags = USB_FLG_MSGPTR_IS_ROM;
                     usbMsgPtr = (usbMsgPtr_t)(CUSTOM_MACRO_ADDRESS+(CUSTOM_MACRO_SIZE_MAX * (rq->wLength.word - OPTION_GET_REPORT_LENGTH_MACRO1)));
-					return CUSTOM_MACRO_SIZE_MAX;
+                    return CUSTOM_MACRO_SIZE_MAX;
 
                 }else if(rq->wLength.word == OPTION_GET_OPTION_INDEX_DUALACTION){
                     // cst macro
                     usbMsgFlags = USB_FLG_MSGPTR_IS_ROM;
                     usbMsgPtr = (usbMsgPtr_t)(DUALACTION_ADDRESS);
                     return DUALACTION_BYTES;
+
+#endif
             	}else {
             		return rq->wLength.word;
             	}
@@ -432,6 +464,9 @@ uint8_t usbFunctionWrite(uchar *data, uchar len) {
         		eeprom_write_byte((uint8_t *)EEPROM_BOOTLOADER_START, 0x00);
         	}
         	delegateGotoBootloader();
+/* TODO
+ * 이전 버전과 호환을 위해 남겨둠
+ */
 #ifdef ENABLE_BOOTMAPPER
         }else if(data[1] == OPTION_INDEX_BOOTMAPPER){
         	if(data[2] == OPTION_VALUE_BOOTMAPPER_START){

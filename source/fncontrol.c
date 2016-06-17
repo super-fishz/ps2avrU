@@ -24,6 +24,7 @@
 static uint8_t _beyondFnLed;	// 0: off, 1:NL, 2:SL
 // for KEY_BEYOND_FN;
 static uint8_t _beyondFnIndex = 0;     //KEY_BEYOND_FN state
+static uint8_t _prevBeyondFnIndex = 0;
 static bool _isDownExtraFN = false;
 static bool _isDownQuickMacro = false;
 static bool _isReadyQuickMacro = false;
@@ -41,11 +42,15 @@ bool isDownExtraFn(void)
 uint8_t getBeyondFN(void){
     return _beyondFnIndex;
 }
+uint8_t getBeyondFNPrev(void){
+    return _prevBeyondFnIndex;
+}
 
 uint8_t getBeyondFnLed(void){
     return _beyondFnLed;
 }
 
+#ifdef FN_TOGGLE_TEST
 static void __setBeyondFnLed(void)
 {
     setLEDIndicate();
@@ -73,10 +78,13 @@ void setBeyondFnLed(uint8_t xLed){
         eeprom_update_byte((uint8_t *) EEPROM_ENABLED_OPTION, ((eeprom_read_byte((uint8_t *) EEPROM_ENABLED_OPTION) | (_BV(TOGGLE_BEYOND_FN_LED_NL))) | (_BV(TOGGLE_BEYOND_FN_LED_SL))));
     }
 
+#ifdef FN_TOGGLE_TEST
     __setBeyondFnLed();
+#endif
 }
+#endif
 
-#ifndef DISABLE_HARDWARE_MENU
+#if 0 //ndef DISABLE_HARDWARE_MENU
 
 #define CMD_OFF_BEYOND_FN_LED 1
 #define CMD_NL_BEYOND_FN_LED 2
@@ -164,7 +172,7 @@ void initBeyondFn(void){
      TOGGLE_BEYOND_FN_LED_NL == 1, TOGGLE_BEYOND_FN_LED_SL == 0 : SL
      */
 //    _beyondFnLedEnabled = getToggleOption(EEPROM_ENABLED_OPTION, TOGGLE_BEYOND_FN_LED_NL);
-    if(
+    /*if(
         ((eeprom_read_byte((uint8_t *) EEPROM_ENABLED_OPTION) >> TOGGLE_BEYOND_FN_LED_NL) & 0x01) == OPTION_ON
         && ((eeprom_read_byte((uint8_t *) EEPROM_ENABLED_OPTION) >> TOGGLE_BEYOND_FN_LED_SL) & 0x01) == OPTION_OFF
     ){
@@ -176,9 +184,9 @@ void initBeyondFn(void){
         _beyondFnLed = BEYOND_FN_LED_SL;
     }else{
         _beyondFnLed = BEYOND_FN_LED_OFF;
-    }
+    }*/
 
-#ifndef DISABLE_HARDWARE_MENU
+#if 0 //ndef DISABLE_HARDWARE_MENU
     addKeymapperDriver(&driverKeymapperBeyondFn);
 #endif
 }
@@ -240,18 +248,20 @@ bool isKeyEnabled(uint8_t xKeyidx){
 // 키를 누르거나 땔때 FN 및 LED등 을 컨트롤한다.
 bool applyFN(uint8_t xKeyidx, uint8_t xCol, uint8_t xRow, bool xIsDown) {
 
+    // dual action key를 기본키 (caps lock 등)으로 반환;
     xKeyidx = getDualActionDefaultKey(xKeyidx);
 
-    if(isFnKey(xKeyidx)) return false; 
+    if(isFnKey(xKeyidx)) return false;
 
     if(xIsDown) {
 
         if((xKeyidx ==  KEY_BEYOND_FN || xKeyidx == KEY_BEYOND_FN3)
         		|| (_isDownExtraFN && xKeyidx == BEYOND_FN_CANCEL_KEY)){ // beyond_fn을 활성화;
+            _prevBeyondFnIndex = _beyondFnIndex;
              if( xKeyidx == BEYOND_FN_CANCEL_KEY ) {    // 취소만 가능한 키 
-                _beyondFnIndex = false;
+                _beyondFnIndex = LAYER_NORMAL;
              }else{
-            	if(_beyondFnIndex == 0){
+            	if(_beyondFnIndex == LAYER_NORMAL){
             		if(xKeyidx ==  KEY_BEYOND_FN){
             			_beyondFnIndex = LAYER_FN2;
             		}else{
@@ -268,7 +278,7 @@ bool applyFN(uint8_t xKeyidx, uint8_t xCol, uint8_t xRow, bool xIsDown) {
             	}
              }
 
-#ifndef DISABLE_FN2_TOGGLE_LED_BLINK 
+#ifdef FN_TOGGLE_TEST
              if(getBeyondFnLed() == BEYOND_FN_LED_OFF){
                  if(_beyondFnIndex == 0){
                     blinkOnce(100);
@@ -278,9 +288,12 @@ bool applyFN(uint8_t xKeyidx, uint8_t xCol, uint8_t xRow, bool xIsDown) {
                     blinkOnce(70);
                  }
              }
-#endif
-
              __setBeyondFnLed();
+#else
+             setLEDIndicate();
+#endif
+             _prevBeyondFnIndex = _beyondFnIndex;   // 더이상 변화가 없도록;
+
 
              if( xKeyidx == BEYOND_FN_CANCEL_KEY ) {    // 키가 작동하도록 1 리턴;
             	 return 1;

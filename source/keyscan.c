@@ -45,18 +45,32 @@ static void putChangedKey(uint8_t xKeyidx, bool xIsDown, uint8_t xCol, uint8_t x
     if(xKeyidx == KEY_NONE ) return;
 
     // fn 키가 눌렸을 경우 해당 위치의 키는 무시한다.
-    uint8_t gLayer, gKeyIndex;
+    uint8_t gLayer, gKeyIndex, gFnIndex;
     if(getBeyondFN()) {
         gLayer = getBeyondFN();
     }else{
         gLayer = LAYER_NORMAL;
     }
 
-
     if(isFnPosition(xCol, xRow))
     {
-        // 현재 레이어에서 눌린 FN키가 듀얼 액션 키이면, 변경된 레이어의 키를 해당 키로 강제 치환시킴;
+        // 현재 레이어에서 눌린 FN키가 듀얼 액션 키이면, 변경된 레이어의 키를 듀얼 액션 키로 강제 치환시켜서 진행
         gKeyIndex = getCurrentKeyindex(gLayer, xRow, xCol);
+
+        // fn key는 하나만 눌릴 수 있도록 처리;
+        if(xIsDown)
+        {
+            // dual action key라면 FN을 추출;
+            gFnIndex = getDualActionDownKeyIndexWhenIsCompounded(gKeyIndex, true);
+//            DBG1(0x32, (uchar *)&gFnIndex, 1);
+            setFnPressed(gFnIndex);
+        }
+        else
+        {
+            setFnPressed(KEY_NONE);
+            clearFnPosition();
+        }
+
         IF_IS_DUAL_ACTION_KEY(gKeyIndex)
         {
             xKeyidx = gKeyIndex;
@@ -129,7 +143,7 @@ static uint8_t processKeyIndex(uint8_t xLayer, bool xPrev, bool xCur, uint8_t xC
         if(isKeyEnabled(keyidx) == false) return 0;
 
         if(xCur) {
-//            DBG1(0xB1, (uchar *)&xKeyidx, 1);
+//            DBG1(0xB1, (uchar *)&keyidx, 1);
 
             // mark for downed layer
             oldDownedMatrix[xLayer][xRow] |= BV(xCol);
@@ -151,7 +165,7 @@ static uint8_t processKeyIndex(uint8_t xLayer, bool xPrev, bool xCur, uint8_t xC
             keyidx = getCurrentKeyindex(xLayer, xRow, xCol);
             oldDownedMatrix[xLayer][xRow] &= ~BV(xCol);
 
-//            DBG1(0xC1, (uchar *)&xKeyidx, 1);
+//            DBG1(0xC1, (uchar *)&keyidx, 1);
             putChangedKey(keyidx, false, xCol, xRow);
         }
     }
@@ -197,6 +211,8 @@ static void scanKeyWithDebounce(void) {
 
 	uint8_t row, col, prev, cur, result;
     uint8_t gLayer = getLayer();
+
+//    DBG1(0x33, (uchar *)&gLayer, 1);
 
     uint8_t *gMatrix = getCurrentMatrix();
     uint8_t *gPrevMatrix = getPrevMatrix();
