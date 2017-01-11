@@ -18,7 +18,7 @@
 #include "ledconfig.h"
 #include "fncontrol.h"
 #include "sleep.h"
-#include "keymapper.h"
+#include "quickmacro.h"
 #include "main.h"
 #include "bootmapper.h"
 #include "ps2avru_util.h"
@@ -27,7 +27,7 @@
 #include "options.h"
 #include "optionsled.h"
 #include "keydownbuffer.h"
-#include "hardwareinfo.h".h"
+#include "hardwareinfo.h"
 
 static lock_led_t lockLedStatus;
 
@@ -362,7 +362,7 @@ void initLED(void){
 	PORTD &= ~(LEDNUM | LEDCAPS | LEDFULLLED | LEDSCROLL);	// low
 
 	// initialize i2c function library
-#if FIRMWARE == FIRMWARE_GB
+#if HAS_RGB_LED //FIRMWARE == FIRMWARE_GB
     i2cInit();
     i2cSetBitrate(400);
 #endif
@@ -1123,7 +1123,11 @@ static void setLed2State(void){
 		_delayCount = 0;
 		_changeCount = 0;
 		_stepCount = 0;
-		
+
+		// 0으로 처리해주지 않으면 다른 컬러로 되돌아갈 때 작동하지 않는 경우가 생긴다.
+	    prevRgb.r = 0;
+	    prevRgb.g = 0;
+	    prevRgb.b = 0;
 	}
 	else if(_rgbMode == 2)
 	{
@@ -1159,7 +1163,7 @@ static void setLed2State(void){
 
 static void sendI2c(void){
 
-#if FIRMWARE == FIRMWARE_GB
+#if HAS_RGB_LED //FIRMWARE == FIRMWARE_GB
     i2cLength = numOfLeds * 3;
 #ifdef SPLIT
     /**

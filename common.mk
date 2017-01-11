@@ -91,7 +91,7 @@ endif
 			$(COMMON_DIR)/keyindex.c \
 			$(COMMON_DIR)/keymap.c \
 			$(COMMON_DIR)/sleep.c \
-			$(COMMON_DIR)/keymapper.c \
+			$(COMMON_DIR)/quickmacro.c \
 			$(COMMON_DIR)/ps2avru_util.c \
 			$(COMMON_DIR)/macrobuffer.c \
 			$(COMMON_DIR)/bootmapper.c \
@@ -101,6 +101,7 @@ endif
 			$(COMMON_DIR)/usbmain.c \
 			$(COMMON_DIR)/usbdrv/usbdrv.c \
 			$(COMMON_DIR)/timer.c \
+			$(COMMON_DIR)/numlocklayer.c \
 			$(COMMON_DIR)/main.c \
 			
 #put additional assembler source file here

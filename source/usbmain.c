@@ -219,14 +219,14 @@
 #include <string.h>
 #include <util/delay.h>
 
-//#include <avr/wdt.h>
+#include <avr/wdt.h>
 #include "usbdrv/usbdrv.h"
 
 #include "hardwareinfo.h"
 #include "keymatrix.h"
 #include "ledrender.h"
 #include "keymap.h"
-#include "keymapper.h"
+#include "quickmacro.h"
 #include "keyindex.h"
 #include "macrobuffer.h"
 #include "sleep.h"
@@ -476,11 +476,18 @@ void usb_main(void) {
 
     usbInit();
 
-    uchar   i = 0;
-    usbDeviceDisconnect();  /* do this while interrupts are disabled */
-    do{             /* fake USB disconnect for > 250 ms */
-        _delay_ms(1);
-    }while(--i);
+    int interfaceCount = 0;
+
+    if( eeprom_read_byte((uint8_t *)EEPROM_USB_COMPATIBILITY) == 0x00 )
+    {
+        usbDeviceDisconnect();  /* do this while interrupts are disabled */
+        uchar   i = 0;
+        do{             /* fake USB disconnect for > 250 ms */
+            wdt_reset();
+            _delay_ms(1);
+        }while(--i);
+    }
+
     usbDeviceConnect();
 
     // init
@@ -496,6 +503,20 @@ void usb_main(void) {
 #endif
 
     for(;;){
+
+        /*
+         * USB3.0 + win10의 경우 usbDeviceConnect() 딜레이가 있으면 일부 장치에서 인식이 되지않아 이를 제거
+         * 하지만, 구식 부트로더 (ps2avrGB_bootloader_140623)의 경우 빠져나올 때 usbDeviceDisconnect()를 처리하지 않아서
+         * 이를 여기서 처리해줌.
+         */
+        if(interfaceReady == false && interfaceCount++ > 1000)
+        {
+            cli();
+
+            usbDeviceDisconnect();
+            wdt_enable(WDTO_15MS);
+            for(;;);
+        }
 
 #if USB_COUNT_SOF
         if (usbSofCount != 0) {
@@ -556,7 +577,7 @@ void usb_main(void) {
 #endif
 
             }else if(_initState == INIT_INDEX_SET_IDLE){
-            	DBG1(0x99, (uchar *)&_initState, 1);
+//            	DBG1(0x99, (uchar *)&_initState, 1);
 
                 _initState = INIT_INDEX_INITED;
 
@@ -574,22 +595,13 @@ void usb_main(void) {
                 // LED 반응 후에 처리하려고 하면 MAC OS에서 실행되지 않는다.
                 // (MAC OS에서는 플러깅 시 LED가 반응하지 않는다. 대신 바로 출력이 된다.)
                 // for os x
-#ifndef DISABLE_HARDWARE_MENU
-                if(idleRate > 0) {
-                    startKeyMappingOnBoot();
-                }
-#endif
 
 //                DBG1(0xAA, (uchar *)&idleRate, 1);
 
             }else if(_ledInitState == INIT_LED_INDEX_INITED){
                 _ledInitState = INIT_LED_INDEX_COMPLETE;
                 // for windows
-#ifndef DISABLE_HARDWARE_MENU
-                if(idleRate == 0) {
-                    startKeyMappingOnBoot();
-                }
-#endif
+
             }
 
             // ps2avrU loop, must be after scan matrix;
@@ -628,7 +640,7 @@ void usb_main(void) {
             if(initCount++ == 200){       // delay for OS X USB multi device
                 // all platform init led
                 initAfterInterfaceMount();
-                DBG1(0xAB, (uchar *)&initCount, 2);
+//                DBG1(0xAB, (uchar *)&initCount, 2);
             }else if(initCount > 200){
                 initCount = 201;
                 _initState = INIT_INDEX_COMPLETE;

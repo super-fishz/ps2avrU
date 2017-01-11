@@ -27,7 +27,7 @@
 #include "hardwareinfo.h"
 #include "hardwareconfig.h"
 #include "keymap.h" 
-#include "keymapper.h"
+#include "quickmacro.h"
 #include "keyindex.h"
 #include "quickswap.h"
 //#include "lazyfn.h"
@@ -42,6 +42,7 @@
 #include "fncontrol.h"
 #include "esctilde.h"
 #include "keydownbuffer.h"
+#include "numlocklayer.h"
 
 #include "oddebug.h"
 
@@ -150,10 +151,9 @@ void initAfterInterfaceMount(void){
 static void initPreparing(void){
     // init sw
     initQuickSwap();
-#ifndef DISABLE_HARDWARE_MENU
-    initKeymapper();    // first
-#endif
+
     initBeyondFn();     // 1...
+    initNumlockLayer();
     initEscTilde();     // last
 
     initKeyDownBuffer();
@@ -178,12 +178,12 @@ int main(void) {
         // waiting during clear debounce
     }
 
-    uint8_t row, col, cur, keyidx;  
+    uint8_t row, col, cur, keyidx;
     uint8_t *gMatrix = getCurrentMatrix();
 
     // debounce cleared => compare last matrix and current matrix
     for(row=0;row<ROWS;++row)
-    {   
+    {
         if(gMatrix[row] == 0) continue;
         for(col=0;col<COLUMNS;++col)
         {
@@ -197,15 +197,7 @@ int main(void) {
                 }
 #endif
 
-#ifndef DISABLE_HARDWARE_MENU
-                if(keyidx == KEY_M) {
-                    readyKeyMappingOnBoot();
-                }
-#endif
 #ifndef INTERFACE_ONLY_USB
-#ifndef DISABLE_HARDWARE_MENU
-                else
-#endif
                 if(keyidx == KEY_U) {
                     INTERFACE = INTERFACE_USB;
                 }else if(keyidx == KEY_P) {
@@ -234,7 +226,7 @@ int main(void) {
         eeprom_update_byte((uint8_t *)EEPROM_INTERFACE, INTERFACE);
     }else{
         // 255 이면;
-        INTERFACE = eeprom_read_byte((uint8_t *)EEPROM_INTERFACE);    // 1바이트 12번지 읽기, 기본값 0xFF ( 255)  
+        INTERFACE = eeprom_read_byte((uint8_t *)EEPROM_INTERFACE);    // 1바이트 12번지 읽기, 기본값 0xFF ( 255)
     }
 
     // usb가 default;
